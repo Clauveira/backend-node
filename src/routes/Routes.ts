@@ -1,13 +1,10 @@
 import { Router } from 'express';
-import { SingUpController } from '../controllers/SingUpController';
+
+import { SignUpController } from '../controllers';
+
 
 const routes = Router();
 
-routes.get('/singn-up', SingUpController.singUp);
+routes.post('/sign-up', SignUpController.signUp);
 
 export { routes };
-
-
-
-
-
