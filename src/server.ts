@@ -1,4 +1,5 @@
 import express from "express";
+import { errors } from "celebrate";
 
 import { routes } from "./routes/Routes";
 
@@ -8,6 +9,8 @@ app.use(express.json());
 
 app.use(routes);
 
-app.listen(3333);
+app.use(errors());
 
-console.log('\n🔥 Server running in http://localhost:3333 🔥');
+app.listen(process.env.PORT || 3333);
+
+console.log(`\n🔥 Server running in http://localhost:${process.env.PORT || 3333} 🔥`);
