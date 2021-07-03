@@ -20,9 +20,11 @@ const production = {
         database: process.env.DATABASE_NAME,
         password: process.env.DATABASE_PASSWORD,
         port: Number(process.env.DATABASE_PORT || 5432),
-        ssl: process.env.DATABASE_SSL ? {
-            rejectUnauthorized: process.env.SATABASE_SSL_REJECT_UNAUTHORIZED === 'false' ? false : true
-        } : undefined,
+        ssl: process.env.DATABASE_SSL
+            ? {
+                rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'false' ? false : true
+            }
+            : undefined,
     }
 };
 
