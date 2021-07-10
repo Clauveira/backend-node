@@ -19,6 +19,16 @@ const getAll = async (page = 1, limit = 10, search = ''): Promise<string | IProd
       .where('description', 'like', `%${search}%`)
       .offset((page - 1) * limit)
       .limit(limit);
+
+    const allImages = await Knex(TableNames.image)
+      .select('*')
+      .innerJoin(TableNames.productImage, `${TableNames.image}.id`, `${TableNames.productImage}.imageId`)
+      .whereIn(`${TableNames.productImage}.productId`, products.map(product => product.id));
+
+    products.forEach(product => {
+      product.images = allImages.filter(image => image.productId === product.id)
+    });
+
     return products;
   } catch (error) {
     console.log(error)
@@ -26,14 +36,24 @@ const getAll = async (page = 1, limit = 10, search = ''): Promise<string | IProd
   }
 }
 
-const getById = async (id: number): Promise<string | IProduct> => {
+
+const getById = async (id: number): Promise<string | IProduct | undefined> => {
   try {
     const product = await Knex(TableNames.product)
       .select<IProduct[]>('*')
-      .where({ id })
+      .where(`${TableNames.product}.id`, id)
       .first();
 
-    if (!product) return 'Produto não encontrado';
+    if (!product) return undefined;
+
+    product.images = await Knex(TableNames.image)
+      .select('*')
+      .whereIn(`id`, function () {
+        this
+          .select('imageId')
+          .from(TableNames.productImage)
+          .where({ productId: id });
+      })
 
     return product;
   } catch (error) {
@@ -66,34 +86,97 @@ const create = async ({ images, ...productToCreate }: Omit<IProduct, 'id'>): Pro
   }
 }
 
-const updateById = async (id: number, productToUpdate: IProduct): Promise<string | IProduct> => {
+const updateById = async (id: number, productToUpdate: Omit<IProduct, 'images'>, imagesToCreate: Omit<IImage, 'id'>[], imagesToUpdate: IImage[], imagesIdToDelete: number[]): Promise<string | boolean> => {
+  const trx = await Knex.transaction();
+
   try {
-    await Knex(TableNames.product)
+    const success = await trx(TableNames.product)
       .update(productToUpdate)
       .where({ id });
 
-    return productToUpdate;
+    if (success === 0) {
+      trx.rollback();
+      return false;
+    }
+
+    if (imagesToCreate.length > 0) {
+      try {
+        const insertedImagesId = await trx(TableNames.image).insert(imagesToCreate);
+        const relations = insertedImagesId.map(imageId => ({
+          imageId,
+          productId: id,
+        }));
+        await trx(TableNames.productImage).insert(relations);
+      } catch (error) {
+        trx.rollback();
+        console.log(error);
+        return 'Erro ao criar as images do produto na base';
+      }
+    }
+
+    if (imagesToUpdate.length > 0) {
+      try {
+        const queries: Promise<any>[] = [];
+        imagesToUpdate.forEach(image => {
+          queries.push(
+            trx(TableNames.image)
+              .update(image)
+              .where({ id: image.id })
+          );
+        });
+        await Promise.all(queries);
+      } catch (error) {
+        trx.rollback();
+        console.log(error);
+        return 'Erro ao atualizar as images do produto na base';
+      }
+    }
+
+    if (imagesIdToDelete.length > 0) {
+      try {
+        await trx
+          .from(TableNames.image)
+          .whereIn(`id`, imagesIdToDelete)
+          .del();
+      } catch (error) {
+        trx.rollback();
+        console.log(error);
+        return 'Erro ao apagar as images do produto na base';
+      }
+    }
+
+    trx.commit();
+    return true;
   } catch (error) {
-    return 'Erro ao atualizar o produto na base';
+    trx.rollback();
+    console.log(error);
+    return 'Erro ao criar o produto na base';
   }
 }
 
-const deleteById = async (id: number): Promise<string | void> => {
+const deleteById = async (id: number): Promise<string | boolean> => {
   try {
     await Knex
-      .delete(TableNames.image)
-      .innerJoin(
-        `${TableNames.productImage}`,
-        `${TableNames.productImage}.imageId`,
-        `${TableNames.image}.id`
-      )
-      .where(`${TableNames.productImage}.productId`, '=', id);
+      .from(TableNames.image)
+      .whereIn(`id`, function () {
+        this
+          .select('imageId')
+          .from(TableNames.productImage)
+          .where({ productId: id });
+      })
+      .del();
 
-    await Knex
-      .delete(TableNames.product)
-      .where({ id });
+    const success = await Knex(TableNames.product)
+      .where({ id })
+      .del();
+
+    if (success === 1) {
+      return true;
+    } else {
+      return false;
+    }
   } catch (error) {
-    return 'Erro ao consultar o produto na base';
+    return 'Erro ao apagar o produto da base';
   }
 }
 
